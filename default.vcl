@@ -8,15 +8,14 @@ backend default {
 acl purge {
       "localhost";
         "127.0.0.1";
-        "104.131.110.26";
+        "Server Public IP";
 }
 sub vcl_recv {
-
-
-
+	
 	# set standard proxied ip header for getting original remote address
 	set req.http.X-Forwarded-For = client.ip;
 	set req.grace = 30m;
+	
 if (req.request == "PURGE") {
 	if (!client.ip ~ purge) {
 		error 405 "Not allowed.";
@@ -72,64 +71,6 @@ if (req.request == "PURGE") {
 		set req.url = regsub(req.url, "comment-page-1", "");
 	}
 
-  # remove "?: " from query string
-  # EXAMPLE : http://thenextweb.com/apps/2011/09/12/photo-academy-an-all-in-one-photography-guide-on-your-iphone/?%3A+TheNextWeb+%28The+Next+Web+All+Stories%29
-
-
-	if(req.url ~ "\?esi$") {
-	} elsif(
-		req.url ~ "\?:"
-		|| req.url ~ "\?\:" 
-		|| req.url ~ "\?\%3A" 
-		
-		
-		|| req.url ~ "\?_=" 
-		|| req.url ~ "\?all=1" 
-		
-		
-		|| req.url ~ "\?switch=" 
-		|| req.url ~ "\?r=contact" 
-		|| req.url ~ "\?r=register_kennisland" 
-		|| req.url ~ "\?utmsource=" 
-		|| req.url ~ "\?utm_term=" 
-		|| req.url ~ "\?awid=" 
-		|| req.url ~ "\?uid="
-		|| req.url ~ "\?asid="
-		|| req.url ~ "\?=depth"
-		
-		|| req.url ~ "(\?|&)replytocom="
-		
-		|| req.url ~ "\?wptouch_page_template="
-		
-		|| req.url ~ "\?amp"  
-		|| req.url ~ "\?sess_id" 
-		|| req.url ~ "\? Web social media" 
-		|| req.url ~ "\?audioselect=" 
-		|| req.url ~ "\?stream&" 
-		
-		|| req.url ~ "\?\%2Bbutton&\%2Bmedia"
-		|| req.url ~ "\?\+button"
-		
-		|| req.url ~ "\?volt="
-		|| req.url ~ "\?pushpress=hub"
-
-		
-		|| req.url ~ "The\+Next\+Web\+Top\+Stories" 
-		|| req.url ~ "The\+Next\+Web\+Google" 
-		|| req.url ~ "The\+Next\+Web\+Shareables" 
-		|| req.url ~ "The\+Next\+Web\+Appetite" 
-		|| req.url ~ "The\+Next\+Web\+Apps" 
-
-		|| req.url ~ "\?\.com" 
-		|| req.url ~ "\?\.it"  
-		|| req.url ~ "\?campaign="
-		|| req.url ~ "\?action=com_google"
-	
-	) {
-		set req.url = regsub(req.url, "\?.*$", "");
-	}
-	
-
 	# remove double // in urls, 
 	set req.url = regsuball( req.url, "//", "/"      );
   
@@ -158,18 +99,6 @@ if (req.request == "PURGE") {
 		}
 	}
 	
-	
-	# never cache twitter oauth login unless it are images
-	if (req.url ~ "^/[^?]+\.(jpeg|jpg|png|gif|ico|js|css|txt|gz|zip|lzma|bz2|tgz|tbz|html|htm)(\?.*|)$") {
-		# Remove cookies and query string for real static files
-		unset req.http.cookie;
-
-	}
-	else if( req.url ~ "^/register"  || req.url ~ "livefyre=" || req.url ~ "/sitemap.xml" || req.url ~ "/real-auth" || req.http.Cookie ~ "wptouch-pro-view"){
-		return (pass);
-	}
-
-
 	# File type that we will always cache
 	if (req.request == "GET" && req.url ~ "\.(gif|jpg|swf|css|js|png|jpg|jpeg|gif|png|tiff|tif|svg|swf|ico|css|js|vsd|doc|ppt|pps|xls|pdf|mp3|mp4|m4a|ogg|mov|avi|wmv|sxw|zip|gz|bz2|tgz|tar|rar|odc|odb|odf|odg|odi|odp|ods|odt|sxc|sxd|sxi|sxw|dmg|torrent|deb|msi|iso|rpm)$") {
 		return(lookup);
@@ -213,11 +142,6 @@ sub vcl_fetch {
 		set beresp.ttl = 5m;
 	}
   
-	# remove some headers we never want to see
-	unset beresp.http.Server;
-	unset beresp.http.X-Powered-By;
-	unset beresp.http.x-backend;
-
 	# Enable ESI mode in varnish based on backend responce headers
 	if (beresp.http.esi-enabled == "1") {
 		set beresp.do_esi = true;
@@ -272,9 +196,7 @@ sub vcl_deliver {
 	else {
 		set resp.http.X-Cache = "MISS";
 	}
-	# remove some headers added by varnish
-	unset resp.http.Via;
-	unset resp.http.X-Varnish;
+	
 }
 
 sub vcl_hash {
@@ -282,22 +204,6 @@ sub vcl_hash {
 	# convert request in hash for cache lookup
 	hash_data(req.url);
 	
-	# altering hash so subdomains are ignored.
-	# don't do this if you actually run different sites on different subdomains
-	if (req.http.host) {
-		hash_data(req.http.host);
-	}
-	
-	# MOBILE
-	# ensure separate cache for mobile clients (WPTouch workaround)
-	if( req.http.User-Agent ~ "(?i)(iphone|ipod|aspen|incognito|webmate|android|dream|cupcake|froyo|blackberry|webos|samsung|bada|IEMobile|htc|Maemo|Fennec)" ){
-		hash_data("touch");
-	} else { # We're AB-ing only the desktop site
-		if( req.http.X-AB ) {
-			hash_data(req.http.X-AB);
-		}
-	}
-	return (hash);
 }
 
 
