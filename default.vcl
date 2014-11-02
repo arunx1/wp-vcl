@@ -1,32 +1,29 @@
-#<?php
-backend master_only { .host = "172.20.2.227"; .connect_timeout = 600s; .first_byte_timeout = 600s; .between_bytes_timeout = 600s; }
-
-
-
-director www_director random {
-
-	.retries = 50;
-	
-	# main server
-	{ .backend = { .host = "172.20.2.227"; .connect_timeout = 600s; .first_byte_timeout = 600s; .between_bytes_timeout = 600s; } .weight = 40; }
-
-	# server 2
-	{ .backend = { .host = "172.20.2.106"; .connect_timeout = 600s; .first_byte_timeout = 600s; .between_bytes_timeout = 600s; } .weight = 60;  }
-
+backend default {
+    .host = "127.0.0.1";
+    .port = "8000";
+.connect_timeout = 600s;
+.first_byte_timeout = 600s;
+.between_bytes_timeout = 600s;
 }
-
-
-
+acl purge {
+      "localhost";
+        "127.0.0.1";
+        "104.131.110.26";
+}
 sub vcl_recv {
 
-	if (req.request == "PURGE") {
-		error 405 "Not allowed.";
-	}
+
 
 	# set standard proxied ip header for getting original remote address
 	set req.http.X-Forwarded-For = client.ip;
 	set req.grace = 30m;
-
+if (req.request == "PURGE") {
+	if (!client.ip ~ purge) {
+		error 405 "Not allowed.";
+	}
+	ban("req.url ~ "+req.url);
+	error 200 "Purged";
+}
 
 	### NORMALIZE
 	
@@ -162,28 +159,16 @@ sub vcl_recv {
 	}
 	
 	
-	# Make sure all static files are server from the main server, so no nfs share is needed to all slave machines to share the images
-	if (req.url ~ "^/wp-(login|admin)" || req.url ~ "^/[^?]+/wp-(login|admin)" req.url ~ "^/podcast" || req.url ~ "^/cronjobs" || req.url ~ "^/[^?]+\.(jpeg|jpg|png|gif)(\?.*|)$") {
-		set req.backend = master_only;
-	}
-	else {
-		set req.backend = www_director;
-	}
-
 	# never cache twitter oauth login unless it are images
 	if (req.url ~ "^/[^?]+\.(jpeg|jpg|png|gif|ico|js|css|txt|gz|zip|lzma|bz2|tgz|tbz|html|htm)(\?.*|)$") {
 		# Remove cookies and query string for real static files
 		unset req.http.cookie;
 
 	}
-	else if( req.url ~ "^/register"  || req.url ~ "livefyre=" || req.url ~ "/real-auth" || req.http.Cookie ~ "wptouch-pro-view"){
+	else if( req.url ~ "^/register"  || req.url ~ "livefyre=" || req.url ~ "/sitemap.xml" || req.url ~ "/real-auth" || req.http.Cookie ~ "wptouch-pro-view"){
 		return (pass);
 	}
 
-	if( req.url ~ "oauth_token" || req.url ~ "twc_req_key"){
-		set req.backend = master_only;
-		return (pass);
-	}
 
 	# File type that we will always cache
 	if (req.request == "GET" && req.url ~ "\.(gif|jpg|swf|css|js|png|jpg|jpeg|gif|png|tiff|tif|svg|swf|ico|css|js|vsd|doc|ppt|pps|xls|pdf|mp3|mp4|m4a|ogg|mov|avi|wmv|sxw|zip|gz|bz2|tgz|tar|rar|odc|odb|odf|odg|odi|odp|ods|odt|sxc|sxd|sxi|sxw|dmg|torrent|deb|msi|iso|rpm)$") {
@@ -292,7 +277,6 @@ sub vcl_deliver {
 	unset resp.http.X-Varnish;
 }
 
-
 sub vcl_hash {
 
 	# convert request in hash for cache lookup
@@ -329,4 +313,15 @@ sub vcl_error {
 		set obj.status = 301;
 		return(deliver);
 	}
+}
+sub vcl_hit {
+  if (req.request == "PURGE") {
+    error 200 "OK";
+  }
+}
+
+sub vcl_miss {
+  if (req.request == "PURGE") {
+    error 404 "Not cached";
+  }
 }
